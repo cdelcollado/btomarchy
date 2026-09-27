@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "cdelcollado.bluetooth",
+  "name": "Bluetooth (hide devices)",
+  "version": "1.0.0",
+  "author": "cdelcollado",
+  "description": "Omarchy Bluetooth bar widget with the ability to hide unwanted devices from scans.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "Bluetooth",
+    "description": "Bluetooth device list with connect/disconnect and hide-from-scan.",
+    "category": "Network",
+    "allowMultiple": false
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.bluetooth"
+  }
+}
