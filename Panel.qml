@@ -41,6 +41,9 @@ Panel {
   // updates. Connected/paired devices are never hidden.
   readonly property string ignoredPath: Quickshell.env("HOME") + "/.local/state/omarchy/bluetooth-ignored.json"
   property var ignoredDevices: ({})
+  // Hidden devices are collapsed by default: they normally stay out of the
+  // way, and a click on the section header expands them.
+  property bool hiddenExpanded: false
 
   function deviceLabel(device) {
     return Model.deviceLabel(device)
@@ -501,6 +504,7 @@ Panel {
       else { focusSection = "header" }
       actionFocused = false
       cursorActive = false
+      hiddenExpanded = false
     }
   }
 
@@ -961,8 +965,8 @@ Panel {
           width: parent.width
         }
 
-        // Devices the user hid from scanning, so a mistaken hide can be
-        // undone without digging through the state file.
+        // Devices the user hid from scanning. Collapsed by default so the list
+        // stays out of the way; click the header to expand and undo a hide.
         PanelSeparator {
           visible: root.ignoredRows.length > 0
           foreground: root.bar.foreground
@@ -974,14 +978,56 @@ Panel {
           width: parent.width
           spacing: Style.space(6)
 
-          PanelSectionHeader {
-            text: "HIDDEN"
-            foreground: root.bar.foreground
-            fontFamily: root.bar.fontFamily
+          // Clickable section header: chevron + count.
+          Item {
+            id: hiddenHeader
+            width: parent.width
+            height: hiddenHeaderContent.implicitHeight + Style.spacing.rowPaddingX
+
+            Item {
+              id: hiddenHeaderContent
+              anchors.left: parent.left
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.leftMargin: Style.space(10)
+              anchors.rightMargin: Style.space(10)
+              implicitHeight: Math.max(hiddenChevron.implicitHeight, hiddenHeaderLabel.implicitHeight)
+
+              Text {
+                id: hiddenChevron
+                textFormat: Text.PlainText
+                text: root.hiddenExpanded ? "󰅃" : "󰅀"
+                color: Qt.darker(root.bar.foreground, 1.4)
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.caption
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+              }
+
+              Text {
+                id: hiddenHeaderLabel
+                textFormat: Text.PlainText
+                text: "HIDDEN (" + root.ignoredRows.length + ")"
+                color: Qt.darker(root.bar.foreground, 1.4)
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+                anchors.left: hiddenChevron.right
+                anchors.leftMargin: Style.space(8)
+                anchors.verticalCenter: parent.verticalCenter
+              }
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: Qt.PointingHandCursor
+              onClicked: root.hiddenExpanded = !root.hiddenExpanded
+            }
           }
 
           Repeater {
-            model: root.ignoredRows
+            model: root.hiddenExpanded ? root.ignoredRows : []
             delegate: Item {
               required property var modelData
               required property int index
