@@ -19,6 +19,16 @@ and paired devices are always shown.
   `~/.local/state/omarchy/bluetooth-ignored.json` and survive shell restarts
   and `omarchy update`.
 
+## Requirements
+
+This plugin runs inside Omarchy's shell and uses these built-in Omarchy
+commands, which ship with every Omarchy install:
+
+- `omarchy-bluetooth-device` — connect / disconnect / forget / pair.
+- `omarchy-bluetooth-power` — toggle the adapter's soft rfkill block.
+
+No other dependencies.
+
 ## Install
 
 ```bash
@@ -31,6 +41,9 @@ If the widget doesn't appear in your bar automatically, place it:
 omarchy plugin enable cdelcollado.bluetooth
 ```
 
+**Note:** `allowMultiple` is `false`, so make sure the built-in
+`omarchy.bluetooth` is disabled if you have both installed.
+
 ## Usage
 
 1. Click the Bluetooth icon in the bar.
@@ -42,15 +55,19 @@ omarchy plugin enable cdelcollado.bluetooth
 
 ## Development
 
-This is a clone of `omarchy.bluetooth` (see `manifest.json` →
-`omarchy.clonedFrom`), so it was originally authored by the Omarchy project.
-
 The interesting bits:
 
 - `Model.js` — device grouping + the `isIgnored` filter.
 - `Panel.qml` — the panel UI, the hide/unhide buttons, and JSON persistence.
 
+Validate a local copy before publishing:
+
+```bash
+omarchy plugin validate .
+```
+
 ## License
 
-Based on Omarchy's `omarchy.bluetooth` widget. See the
-[Omarchy project](https://omarchy.org/) for upstream licensing.
+[MIT](LICENSE). Derived from Omarchy's `omarchy.bluetooth` first-party
+plugin, also MIT licensed. See [Omarchy](https://omarchy.org/) for upstream
+licensing.

@@ -10,8 +10,8 @@ import "Model.js" as Model
 
 Panel {
   id: root
-  moduleName: "omarchy.bluetooth"
-  ipcTarget: "omarchy.bluetooth"
+  moduleName: "cdelcollado.bluetooth"
+  ipcTarget: "cdelcollado.bluetooth"
   // manageIpc: false so this panel can own the single IpcHandler the target
   // permits — needed for the toggleBluetooth method below.
   manageIpc: false
@@ -722,7 +722,7 @@ Panel {
   }
 
   IpcHandler {
-    target: "omarchy.bluetooth"
+    target: "cdelcollado.bluetooth"
 
     function open() { root.open() }
     function close() { root.close() }
