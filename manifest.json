@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "cdelcollado.bluetooth",
   "name": "Bluetooth (hide devices)",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "cdelcollado",
   "license": "MIT",
   "description": "Omarchy Bluetooth bar widget with the ability to hide unwanted devices from scans.",

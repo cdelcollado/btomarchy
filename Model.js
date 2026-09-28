@@ -3,6 +3,16 @@ function deviceLabel(device) {
   return String(device.deviceName || device.name || "").trim()
 }
 
+// Label for display in lists. Falls back to the raw address so anonymous
+// devices (MAC- or UUID-only advertisers) are still visible — and therefore
+// still hideable — rather than dropped entirely by hasHumanName().
+function displayLabel(device) {
+  if (!device) return ""
+  var label = deviceLabel(device)
+  if (label !== "") return label
+  return String(device.address || "").trim()
+}
+
 function toArray(values) {
   if (!values) return []
   if (Array.isArray(values)) return values.slice()
@@ -76,7 +86,7 @@ function bluetoothSinkMatchesDevice(node, device) {
 
 function sortedByLabel(devices) {
   var list = toArray(devices)
-  list.sort(function(a, b) { return deviceLabel(a).localeCompare(deviceLabel(b)) })
+  list.sort(function(a, b) { return displayLabel(a).localeCompare(displayLabel(b)) })
   return list
 }
 
@@ -95,8 +105,31 @@ function deviceRow(d) {
     state: d.state !== undefined ? d.state : -1,
     batteryAvailable: !!d.batteryAvailable,
     battery: d.battery !== undefined ? d.battery : 0,
-    pairing: !!d.pairing
+    pairing: !!d.pairing,
+    icon: d.icon || ""
   }
+}
+
+// Map BlueZ "icon" class strings to Nerd Font glyphs.
+// Connected devices prefer the connected variant (e.g. 󰂱); the panel's
+// DeviceRow applies connected overrides on top of this map.
+function deviceIconGlyph(bluezIcon) {
+  if (!bluezIcon) return ""
+  var lo = bluezIcon.toLowerCase()
+  if (lo.indexOf("headset") !== -1 || lo.indexOf("headphone") !== -1) return "󰋋"
+  if (lo.indexOf("speaker") !== -1 || lo.indexOf("audio-card") !== -1) return "󰓃"
+  if (lo.indexOf("keyboard") !== -1) return "󰌌"
+  if (lo.indexOf("mouse") !== -1) return "󰍽"
+  if (lo.indexOf("gaming") !== -1) return "󰊖"
+  if (lo.indexOf("phone") !== -1) return "󰏲"
+  if (lo.indexOf("computer") !== -1 || lo.indexOf("laptop") !== -1 || lo.indexOf("desktop") !== -1) return "󰌢"
+  if (lo.indexOf("camera") !== -1 || lo.indexOf("video") !== -1 || lo.indexOf("display") !== -1) return "󰄀"
+  if (lo.indexOf("watch") !== -1) return "󰂷"
+  if (lo.indexOf("tablet") !== -1) return "󰀂"
+  if (lo.indexOf("modem") !== -1 || lo.indexOf("network") !== -1 || lo.indexOf("tethering") !== -1) return "󰢧"
+  if (lo.indexOf("printer") !== -1) return "󰐪"
+  if (lo.indexOf("scanner") !== -1) return "󰈛"
+  return ""
 }
 
 // True when a device's address is present in the ignored set. `ignored` is a
@@ -116,7 +149,10 @@ function deviceLists(devices, ignored) {
 
   for (var i = 0; i < values.length; i++) {
     var d = values[i]
-    if (!d || !hasHumanName(d)) continue
+    if (!d) continue
+    // Keep anonymous devices (no human-readable name) in the discovered
+    // list, labeled by address, so they can be hidden from scans too.
+    if (!hasHumanName(d) && displayLabel(d) === "") continue
     if (d.connected) connected.push(d)
     else if (d.paired || d.bonded || d.trusted) known.push(d)
     else if (!isIgnored(d, ignored)) discovered.push(d)
@@ -135,16 +171,34 @@ function cloneMap(map) {
   return next
 }
 
+// Pending-action entries are { action, expires } objects keyed by address.
+// `expires` is an epoch in milliseconds; expiredPending() sweeps stale entries
+// so each action ages out independently instead of a single global timeout
+// clearing every in-flight action at once.
 function pendingAction(actions, address) {
-  return address && actions && actions[address] ? actions[address] : ""
+  if (!address || !actions) return ""
+  var entry = actions[address]
+  return entry && typeof entry === "object" ? (entry.action || "") : ""
 }
 
-function withPendingAction(actions, address, action) {
+function withPendingAction(actions, address, action, ttl) {
   var next = cloneMap(actions)
   if (!address) return next
-  if (action) next[address] = action
+  if (action) next[address] = { action: action, expires: Date.now() + (ttl || 20000) }
   else delete next[address]
   return next
+}
+
+function expiredPending(actions, now) {
+  if (!actions) return actions
+  var next = null
+  for (var key in actions) {
+    var entry = actions[key]
+    if (entry && typeof entry === "object" && entry.expires > now) continue
+    if (next === null) next = cloneMap(actions)
+    delete next[key]
+  }
+  return next === null ? actions : next
 }
 
 function visibleSections(lists, discovering) {
@@ -163,9 +217,40 @@ function sectionDevices(lists, section) {
   return []
 }
 
+// Case-insensitive substring match over the display label and raw address,
+// used by the panel's filter box.
+function matchesQuery(device, query) {
+  var q = String(query || "").trim().toLowerCase()
+  if (q === "") return true
+  var haystack = (displayLabel(device) + " " + String(device.address || "")).toLowerCase()
+  return haystack.indexOf(q) !== -1
+}
+
+function filterList(list, query) {
+  var out = []
+  var values = toArray(list)
+  for (var i = 0; i < values.length; i++) {
+    if (matchesQuery(values[i], query)) out.push(values[i])
+  }
+  return out
+}
+
+// Returns `lists` unchanged when the query is empty (so callers keep identity
+// and avoid needless model rebuilds); otherwise a filtered copy of each list.
+function filterLists(lists, query) {
+  var q = String(query || "").trim()
+  if (q === "") return lists
+  return {
+    connected: filterList(lists ? lists.connected : null, q),
+    known: filterList(lists ? lists.known : null, q),
+    discovered: filterList(lists ? lists.discovered : null, q)
+  }
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     deviceLabel: deviceLabel,
+    displayLabel: displayLabel,
     toArray: toArray,
     isUuidLike: isUuidLike,
     isAddressLike: isAddressLike,
@@ -177,11 +262,15 @@ if (typeof module !== "undefined") {
     isIgnored: isIgnored,
     sortedByLabel: sortedByLabel,
     deviceRow: deviceRow,
+    deviceIconGlyph: deviceIconGlyph,
     deviceLists: deviceLists,
     cloneMap: cloneMap,
     pendingAction: pendingAction,
     withPendingAction: withPendingAction,
+    expiredPending: expiredPending,
     visibleSections: visibleSections,
-    sectionDevices: sectionDevices
+    sectionDevices: sectionDevices,
+    matchesQuery: matchesQuery,
+    filterLists: filterLists
   }
 }

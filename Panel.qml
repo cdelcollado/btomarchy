@@ -63,17 +63,30 @@ Panel {
 
   function loadIgnored(raw) {
     var map = {}
+    var corrupt = false
     try {
       var parsed = JSON.parse(raw || "{}")
-      var stored = parsed && parsed.devices ? parsed.devices : {}
-      for (var addr in stored) {
-        var key = Model.normalizedAddress(addr)
-        if (key) map[key] = String(stored[addr] || "")
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        var stored = parsed.devices
+        if (stored && typeof stored === "object" && !Array.isArray(stored)) {
+          for (var addr in stored) {
+            var key = Model.normalizedAddress(addr)
+            if (key) map[key] = String(stored[addr] || "")
+          }
+        } else if (stored !== undefined) {
+          corrupt = true
+        }
+      } else {
+        corrupt = true
       }
     } catch (e) {
-      map = {}
+      corrupt = true
     }
     ignoredDevices = map
+    // Rewrite the file once after corruption so it doesn't silently reset on
+    // every shell start. Safe from loops: the rewritten content is valid, so
+    // the follow-up reload lands in the non-corrupt branch above.
+    if (corrupt) persistIgnored()
   }
 
   function persistIgnored() {
@@ -90,7 +103,7 @@ Panel {
     var addr = Model.normalizedAddress(device.address)
     if (!addr || isIgnoredAddress(addr)) return
     var next = Model.cloneMap(ignoredDevices)
-    next[addr] = deviceLabel(device) || device.address
+    next[addr] = Model.displayLabel(device) || device.address
     ignoredDevices = next
     persistIgnored()
   }
@@ -136,15 +149,25 @@ Panel {
     onFileChanged: reload()
   }
 
+  // Live device-list filter (search box) and an address-display toggle. The
+  // filter is applied at the group level (filteredGroups) so every downstream
+  // consumer — rows, section visibility, and the keyboard cursor — sees the
+  // same filtered view and stays in sync.
+  property string searchQuery: ""
+  property bool showAddresses: false
+
   readonly property var deviceGroups: Model.deviceLists(devices, ignoredDevices)
-  readonly property var connectedDevices: deviceGroups.connected || []
-  readonly property var knownDevices: deviceGroups.known || []
-  readonly property var discoveredDevices: deviceGroups.discovered || []
+  readonly property var filteredGroups: Model.filterLists(deviceGroups, searchQuery)
+  readonly property var connectedDevices: filteredGroups.connected || []
+  readonly property var knownDevices: filteredGroups.known || []
+  readonly property var discoveredDevices: filteredGroups.discovered || []
 
   readonly property string icon: {
     if (!adapter) return ""
     if (!adapter.enabled) return "󰂲"
-    if (connectedDevices.length > 0) return "󰂱"
+    // Read the raw (unfiltered) connected list so a search query can never
+    // knock the bar icon off the "connected" state.
+    if (deviceGroups.connected && deviceGroups.connected.length > 0) return "󰂱"
     return "󰂯"
   }
 
@@ -211,11 +234,11 @@ Panel {
   }
 
   readonly property var visibleSections: {
-    return Model.visibleSections(deviceGroups, adapter && adapter.discovering)
+    return Model.visibleSections(filteredGroups, adapter && adapter.discovering)
   }
 
   function devicesForSection(section) {
-    return Model.sectionDevices(deviceGroups, section)
+    return Model.sectionDevices(filteredGroups, section)
   }
 
   // The scrollable half of the panel — remembered devices, then whatever the
@@ -247,12 +270,54 @@ Panel {
   // property declaration), so it is iterated directly.
   function deviceFor(row) {
     if (!row || !row.dev) return null
-    var addr = row.dev.address || ""
+    return deviceForAddress(row.dev.address || "")
+  }
+
+  function deviceForAddress(address) {
+    if (!address) return null
     var devs = devices || []
     for (var i = 0; i < devs.length; i++) {
-      if ((devs[i].address || "") === addr) return devs[i]
+      if ((devs[i].address || "") === address) return devs[i]
     }
     return null
+  }
+
+  // Context-menu state + dispatch. A single shared Popup (see `contextMenu`
+  // below) is fed a list of { label, action } options per row.
+  property var contextOptions: []
+  property string contextMenuAddress: ""
+  property int contextMenuIndex: 0
+
+  function openContextMenu(row, x, y) {
+    var dev = deviceFor(row)
+    if (!dev) return
+    contextMenuAddress = dev.address || ""
+
+    var opts = []
+    var isConnected = row.isConnected
+    var isDiscovered = row.isDiscovered
+    var isKnown = row.sectionName === "known"
+
+    if (!isConnected && (isKnown || isDiscovered)) opts.push({ label: "Connect", action: "connect" })
+    if (isConnected) opts.push({ label: "Disconnect", action: "disconnect" })
+    if (isKnown || row.sectionName === "connected") opts.push({ label: "Forget", action: "forget" })
+    if (isDiscovered) opts.push({ label: "Hide from scans", action: "hide" })
+
+    contextOptions = opts
+    contextMenuIndex = 0
+    contextMenu.x = x
+    contextMenu.y = y
+    contextMenu.open()
+  }
+
+  function runContextMenuAction(action) {
+    var dev = deviceForAddress(contextMenuAddress)
+    contextMenu.close()
+    if (!dev) return
+    if (action === "connect") connectDevice(dev)
+    else if (action === "disconnect") disconnectDevice(dev)
+    else if (action === "forget") forgetDevice(dev)
+    else if (action === "hide") ignoreDevice(dev)
   }
 
   // Flat position of the keyboard cursor, or -1 while it sits on the hero or
@@ -345,8 +410,7 @@ Panel {
 
   function setPendingAction(address, action) {
     if (!address) return
-    pendingActions = Model.withPendingAction(pendingActions, address, action)
-    if (action) pendingTimeout.restart()
+    pendingActions = Model.withPendingAction(pendingActions, address, action, 20000)
   }
 
   function deviceCommand(action, address) {
@@ -383,7 +447,7 @@ Panel {
     var changed = false
 
     for (var address in next) {
-      var action = next[address]
+      var action = Model.pendingAction(next, address)
       var found = null
 
       for (var i = 0; i < devices.length; i++) {
@@ -505,6 +569,7 @@ Panel {
       actionFocused = false
       cursorActive = false
       hiddenExpanded = false
+      searchQuery = ""
     }
   }
 
@@ -666,10 +731,16 @@ Panel {
   }
 
   Timer {
-    id: pendingTimeout
-    interval: 20000
-    repeat: false
-    onTriggered: root.pendingActions = ({})
+    id: pendingSweep
+    interval: 1000
+    repeat: true
+    running: true
+    onTriggered: {
+      // Each pending action has its own ttl (set in setPendingAction), so
+      // sweep expired entries one by one instead of a single 20 s timer that
+      // cleared every in-flight action at once.
+      root.pendingActions = Model.expiredPending(root.pendingActions, Date.now())
+    }
   }
 
   Timer {
@@ -771,6 +842,7 @@ Panel {
       onDeleteRequested: if (root.cursorActive) root.deleteSelected()
       onTextKey: function(t) {
         if (t === "b" || t === "B") root.toggleBluetooth()
+        else if (t === "/") filterField.forceActiveFocus()
       }
 
       Column {
@@ -854,6 +926,55 @@ Panel {
         // grow the popup past the screen.
         PanelSeparator {
           foreground: root.bar.foreground
+        }
+
+        // Filter box + "show addresses" toggle, only while the adapter is on.
+        Item {
+          id: filterRow
+          visible: root.adapter && root.adapter.enabled
+          width: parent.width
+          implicitHeight: Math.max(filterField.implicitHeight, macToggle.implicitHeight)
+
+          TextField {
+            id: filterField
+            anchors.left: parent.left
+            anchors.right: macRow.left
+            anchors.rightMargin: Style.space(10)
+            anchors.verticalCenter: parent.verticalCenter
+            placeholderText: "Filter devices…"
+            foreground: root.bar.foreground
+            font.family: root.bar.fontFamily
+            horizontalPadding: Style.spacing.controlGap
+            verticalPadding: Style.spacing.controlPaddingY
+            text: root.searchQuery
+            onTextChanged: root.searchQuery = text
+            Keys.onEscapePressed: { root.searchQuery = ""; keyCatcher.forceActiveFocus() }
+          }
+
+          Row {
+            id: macRow
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: Style.space(6)
+
+            Text {
+              textFormat: Text.PlainText
+              text: "MAC"
+              color: Qt.darker(root.bar.foreground, 1.4)
+              font.family: root.bar.fontFamily
+              font.pixelSize: Style.font.caption
+              font.bold: true
+              anchors.verticalCenter: parent.verticalCenter
+            }
+
+            ToggleSwitch {
+              id: macToggle
+              checked: root.showAddresses
+              foreground: root.bar.foreground
+              accent: Color.accent
+              onToggled: root.showAddresses = !root.showAddresses
+            }
+          }
         }
 
         Column {
@@ -1088,6 +1209,104 @@ Panel {
     }
   }
 
+  // Shared right-click context menu, positioned at the click and fed a list
+  // of { label, action } options by openContextMenu(). Rebuilt via Repeater
+  // so it can be themed like the rest of the panel instead of inheriting the
+  // stock QtQuick.Controls menu look.
+  Popup {
+    id: contextMenu
+    padding: 0
+    modal: false
+    focus: true
+    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+    width: Style.space(220)
+    height: root.contextOptions.length * (Style.spacing.popupRowHeight + Style.spacing.rowPaddingX)
+
+    onOpenedChanged: {
+      if (opened) {
+        Qt.callLater(function() { contextMenuContent.forceActiveFocus() })
+      } else {
+        root.contextOptions = []
+        root.contextMenuAddress = ""
+        if (root.opened) Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+      }
+    }
+
+    background: BorderSurface {
+      color: Color.popups.background
+      borderSpec: Border.flat(Color.popups.border, 1)
+      radius: Style.cornerRadius
+    }
+
+    contentItem: Column {
+      id: contextMenuContent
+      width: parent.width
+      focus: true
+
+      Keys.onPressed: function(event) {
+        if (event.key === Qt.Key_Escape) { contextMenu.close(); event.accepted = true; return }
+        if (event.key === Qt.Key_Down || event.text === "j") {
+          if (root.contextOptions.length > 0)
+            root.contextMenuIndex = (root.contextMenuIndex + 1) % root.contextOptions.length
+          event.accepted = true; return
+        }
+        if (event.key === Qt.Key_Up || event.text === "k") {
+          if (root.contextOptions.length > 0)
+            root.contextMenuIndex = (root.contextMenuIndex - 1 + root.contextOptions.length) % root.contextOptions.length
+          event.accepted = true; return
+        }
+        if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+          var o = root.contextOptions[root.contextMenuIndex]
+          if (o) root.runContextMenuAction(o.action)
+          event.accepted = true
+        }
+      }
+
+      Repeater {
+        model: root.contextOptions
+
+        delegate: Item {
+          id: menuRow
+          required property var modelData
+          required property int index
+          width: contextMenu.width
+          height: Style.spacing.popupRowHeight + Style.spacing.rowPaddingX
+
+          readonly property bool highlighted: index === root.contextMenuIndex
+
+          BorderSurface {
+            anchors.fill: parent
+            visible: menuRow.highlighted
+            color: Style.hoverFillFor(root.bar.foreground, Color.accent)
+            radius: Style.cornerRadius
+          }
+
+          Text {
+            textFormat: Text.PlainText
+            text: modelData.label
+            color: root.bar.foreground
+            font.family: root.bar.fontFamily
+            font.pixelSize: Style.font.body
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            anchors.leftMargin: Style.space(10)
+            anchors.rightMargin: Style.space(10)
+            elide: Text.ElideRight
+          }
+
+          MouseArea {
+            anchors.fill: parent
+            hoverEnabled: true
+            cursorShape: Qt.PointingHandCursor
+            onContainsMouseChanged: if (containsMouse) root.contextMenuIndex = index
+            onClicked: root.runContextMenuAction(modelData.action)
+          }
+        }
+      }
+    }
+  }
+
   // Two-line device row showing name + live status. Pending state is owned
   // by the panel so it survives rows moving between sections.
   component DeviceRow: CursorSurface {
@@ -1158,8 +1377,8 @@ Panel {
         var dev = root.deviceFor(row)
         if (!dev) return
         if (mouse.button === Qt.RightButton) {
-          if (row.isConnected) root.disconnectDevice(dev)
-          else if (!row.isDiscovered) root.forgetDevice(dev)
+          var p = rowMouse.mapToItem(root, mouse.x, mouse.y)
+          root.openContextMenu(row, p.x, p.y)
           return
         }
         if (row.isConnected) root.disconnectDevice(dev)
@@ -1185,7 +1404,7 @@ Panel {
       Text {
         id: deviceIcon
         textFormat: Text.PlainText
-        text: row.isConnected ? "󰂱" : "󰂯"
+        text: row.isConnected ? "󰂱" : (Model.deviceIconGlyph(row.dev ? row.dev.icon : "") || "󰂯")
         color: row.statusColor
         font.family: root.bar.fontFamily
         font.pixelSize: Style.font.heading
@@ -1204,10 +1423,20 @@ Panel {
 
         Text {
           textFormat: Text.PlainText
-          text: root.deviceLabel(row.dev) || "Device"
+          text: Model.displayLabel(row.dev) || "Device"
           color: root.bar.foreground
           font.family: root.bar.fontFamily
           font.pixelSize: Style.font.body
+          elide: Text.ElideRight
+          width: parent.width
+        }
+        Text {
+          textFormat: Text.PlainText
+          visible: root.showAddresses && row.dev && row.dev.address !== "" && row.dev.address !== Model.displayLabel(row.dev)
+          text: String(row.dev ? row.dev.address : "").toUpperCase()
+          color: Qt.darker(root.bar.foreground, 1.5)
+          font.family: root.bar.fontFamily
+          font.pixelSize: Style.font.caption
           elide: Text.ElideRight
           width: parent.width
         }

@@ -15,6 +15,16 @@ and paired devices are always shown.
 - **Hide** any discovered device from future scans (eye-off button).
 - A **HIDDEN** section at the bottom of the panel lists hidden devices, so a
   mistaken hide can be undone with one click (eye button).
+- **Filter** the device list by name or address (the box under the header, or
+  press `/`).
+- **Show MAC addresses** with the `MAC` toggle, to tell same-named neighbours
+  apart.
+- **Right-click** any device for a context menu (Connect / Disconnect /
+  Forget / Hide from scans).
+- Device rows show an **icon by device type** (headset, keyboard, mouse,
+  phone, …) where BlueZ reports one.
+- Anonymous devices (MAC- or UUID-only advertisers) still appear in the
+  **AVAILABLE** list — labeled by address — so they can be hidden too.
 - Hidden devices are persisted in
   `~/.local/state/omarchy/bluetooth-ignored.json` and survive shell restarts
   and `omarchy update`.
@@ -49,9 +59,13 @@ omarchy plugin enable cdelcollado.bluetooth
 1. Click the Bluetooth icon in the bar.
 2. Let it scan (or keep the panel open — it rescans automatically).
 3. Hover a device under **AVAILABLE** and click the eye-off button (`󰈉`,
-   tooltip "Hide").
+   tooltip "Hide") — or right-click the device and pick **Hide from scans**.
 4. To restore a device, open the **HIDDEN** section at the bottom and click
    the eye button (`󰈈`, tooltip "Show again").
+
+Keyboard (once the panel is open): `j`/`k` move through the list, `Enter`
+connects/disconnects, `x` forgets, `b` toggles Bluetooth, `/` focuses the
+filter box, `Esc` clears the filter.
 
 ## Development
 
