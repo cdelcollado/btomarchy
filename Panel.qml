@@ -138,6 +138,30 @@ Panel {
     return rows
   }
 
+  // Vertical budget for the HIDDEN list, so expanding it never pushes the
+  // panel past the screen. Everything above the HIDDEN section is measured at
+  // its actual laid-out height and subtracted from the card's available
+  // content height (which KeyboardPanel already clamps to the screen). HIDDEN
+  // is the last child of the column, so this has no circular dependency.
+  readonly property real hiddenListMaxHeight: {
+    var avail = panel.availableCardHeight - panel.verticalContentInset
+    if (!(avail > 0)) return Style.space(200)
+
+    var above = heroItem.implicitHeight
+              + heroSep.implicitHeight
+              + (filterRow.visible ? filterRow.implicitHeight : 0)
+              + (connectedList.visible ? connectedList.implicitHeight : 0)
+              + (connectedSep.visible ? connectedSep.implicitHeight : 0)
+              + deviceListView.height
+              + (emptyText.visible ? emptyText.implicitHeight : 0)
+              + (hiddenSep.visible ? hiddenSep.implicitHeight : 0)
+              + Style.space(14) * 9        // column spacing (generous: safe)
+              + hiddenHeader.height
+              + Style.space(6)             // hiddenList's own gap to the list
+
+    return Math.max(Style.space(80), avail - above)
+  }
+
   FileView {
     id: ignoredFile
     path: root.ignoredPath
@@ -852,6 +876,7 @@ Panel {
 
         // ---------- Hero: Bluetooth icon · status ----------
         Item {
+          id: heroItem
           width: parent.width
           implicitHeight: Math.max(heroIcon.implicitHeight, heroLabels.implicitHeight, powerSwitch.implicitHeight)
 
@@ -925,6 +950,7 @@ Panel {
         // Scrollable device list — capped so a noisy neighborhood doesn't
         // grow the popup past the screen.
         PanelSeparator {
+          id: heroSep
           foreground: root.bar.foreground
         }
 
@@ -1004,6 +1030,7 @@ Panel {
         }
 
         PanelSeparator {
+          id: connectedSep
           visible: root.connectedDevices.length > 0 && root.scrollRows.length > 0
           foreground: root.bar.foreground
         }
@@ -1074,6 +1101,7 @@ Panel {
         }
 
         Text {
+          id: emptyText
           textFormat: Text.PlainText
           visible: root.connectedDevices.length === 0 && root.scrollRows.length === 0
           text: !root.adapter ? "No Bluetooth adapter"
@@ -1089,6 +1117,7 @@ Panel {
         // Devices the user hid from scanning. Collapsed by default so the list
         // stays out of the way; click the header to expand and undo a hide.
         PanelSeparator {
+          id: hiddenSep
           visible: root.ignoredRows.length > 0
           foreground: root.bar.foreground
         }
@@ -1147,59 +1176,78 @@ Panel {
             }
           }
 
-          Repeater {
-            model: root.hiddenExpanded ? root.ignoredRows : []
-            delegate: Item {
-              required property var modelData
-              required property int index
-              width: hiddenList.width
-              height: hiddenRowContent.implicitHeight + Style.spacing.rowPaddingX
+          Flickable {
+            id: hiddenFlickable
+            width: parent.width
+            height: root.hiddenExpanded ? Math.min(hiddenRowsColumn.height, root.hiddenListMaxHeight) : 0
+            clip: true
+            contentWidth: width
+            contentHeight: hiddenRowsColumn.height
+            boundsBehavior: Flickable.StopAtBounds
+            interactive: contentHeight > height
 
-              Item {
-                id: hiddenRowContent
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.leftMargin: Style.space(10)
-                anchors.rightMargin: Style.space(10)
-                implicitHeight: Math.max(hiddenIcon.implicitHeight, hiddenName.implicitHeight, unhideBtn.implicitHeight)
+            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
 
-                Text {
-                  id: hiddenIcon
-                  textFormat: Text.PlainText
-                  text: "󰈉"
-                  color: Qt.darker(root.bar.foreground, 1.5)
-                  font.family: root.bar.fontFamily
-                  font.pixelSize: Style.font.heading
-                  anchors.left: parent.left
-                  anchors.verticalCenter: parent.verticalCenter
-                }
+            Column {
+              id: hiddenRowsColumn
+              width: parent.width
+              spacing: Style.space(6)
 
-                Text {
-                  id: hiddenName
-                  textFormat: Text.PlainText
-                  text: modelData.name
-                  color: Qt.darker(root.bar.foreground, 1.5)
-                  font.family: root.bar.fontFamily
-                  font.pixelSize: Style.font.body
-                  elide: Text.ElideRight
-                  anchors.left: hiddenIcon.right
-                  anchors.leftMargin: Style.space(10)
-                  anchors.right: unhideBtn.left
-                  anchors.rightMargin: Style.space(8)
-                  anchors.verticalCenter: parent.verticalCenter
-                }
+              Repeater {
+                model: root.hiddenExpanded ? root.ignoredRows : []
+                delegate: Item {
+                  required property var modelData
+                  required property int index
+                  width: hiddenRowsColumn.width
+                  height: hiddenRowContent.implicitHeight + Style.spacing.rowPaddingX
 
-                PanelActionButton {
-                  id: unhideBtn
-                  anchors.right: parent.right
-                  anchors.verticalCenter: parent.verticalCenter
-                  iconText: "󰈈"
-                  tooltipText: "Show again"
-                  foreground: root.bar.foreground
-                  hoverColor: root.bar.foreground
-                  fontFamily: root.bar.fontFamily
-                  onClicked: root.unignoreDevice(modelData.address)
+                  Item {
+                    id: hiddenRowContent
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.leftMargin: Style.space(10)
+                    anchors.rightMargin: Style.space(10)
+                    implicitHeight: Math.max(hiddenIcon.implicitHeight, hiddenName.implicitHeight, unhideBtn.implicitHeight)
+
+                    Text {
+                      id: hiddenIcon
+                      textFormat: Text.PlainText
+                      text: "󰈉"
+                      color: Qt.darker(root.bar.foreground, 1.5)
+                      font.family: root.bar.fontFamily
+                      font.pixelSize: Style.font.heading
+                      anchors.left: parent.left
+                      anchors.verticalCenter: parent.verticalCenter
+                    }
+
+                    Text {
+                      id: hiddenName
+                      textFormat: Text.PlainText
+                      text: modelData.name
+                      color: Qt.darker(root.bar.foreground, 1.5)
+                      font.family: root.bar.fontFamily
+                      font.pixelSize: Style.font.body
+                      elide: Text.ElideRight
+                      anchors.left: hiddenIcon.right
+                      anchors.leftMargin: Style.space(10)
+                      anchors.right: unhideBtn.left
+                      anchors.rightMargin: Style.space(8)
+                      anchors.verticalCenter: parent.verticalCenter
+                    }
+
+                    PanelActionButton {
+                      id: unhideBtn
+                      anchors.right: parent.right
+                      anchors.verticalCenter: parent.verticalCenter
+                      iconText: "󰈈"
+                      tooltipText: "Show again"
+                      foreground: root.bar.foreground
+                      hoverColor: root.bar.foreground
+                      fontFamily: root.bar.fontFamily
+                      onClicked: root.unignoreDevice(modelData.address)
+                    }
+                  }
                 }
               }
             }
