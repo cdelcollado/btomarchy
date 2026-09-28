@@ -54,6 +54,16 @@ omarchy plugin enable cdelcollado.bluetooth
 **Note:** `allowMultiple` is `false`, so make sure the built-in
 `omarchy.bluetooth` is disabled if you have both installed.
 
+## Remove
+
+```bash
+omarchy plugin remove cdelcollado.bluetooth
+```
+
+Your hidden-device list (`~/.local/state/omarchy/bluetooth-ignored.json`) is
+left in place, so reinstalling the plugin brings your hidden devices back.
+Delete that file if you want to start fresh.
+
 ## Usage
 
 1. Click the Bluetooth icon in the bar.
