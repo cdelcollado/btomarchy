@@ -90,8 +90,10 @@ filter box, `Esc` clears the filter.
 
 The interesting bits:
 
-- `Model.js` — device grouping + the `isIgnored` filter.
-- `Panel.qml` — the panel UI, the hide/unhide buttons, and JSON persistence.
+- `Model.js` — device grouping, the `isIgnored` hide filter, the anonymous
+  (`showAnonymous`) scan filter, and the `batteryGlyph` level-to-glyph map.
+- `Panel.qml` — the panel UI, the hide/unhide buttons, JSON persistence, the
+  `MAC`/`ANON` toggles, and the battery indicator on device rows.
 
 Validate a local copy before publishing:
 
