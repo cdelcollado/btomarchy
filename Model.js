@@ -132,6 +132,26 @@ function deviceIconGlyph(bluezIcon) {
   return ""
 }
 
+// Map a battery level (0–100) to a Nerd Font Material Design battery glyph,
+// in 10% steps: the outline at empty and the filled icon at full. Paired with
+// the numeric percentage shown next to it, so the glyph is a glanceable hint
+// rather than a precise reading.
+function batteryGlyph(level) {
+  var lvl = Number(level)
+  if (!isFinite(lvl)) return ""
+  if (lvl >= 100) return "󰁹"   // battery (full)
+  if (lvl >= 90) return "󰂂"    // battery-90
+  if (lvl >= 80) return "󰂁"    // battery-80
+  if (lvl >= 70) return "󰂀"    // battery-70
+  if (lvl >= 60) return "󰁿"    // battery-60
+  if (lvl >= 50) return "󰁾"    // battery-50
+  if (lvl >= 40) return "󰁽"    // battery-40
+  if (lvl >= 30) return "󰁼"    // battery-30
+  if (lvl >= 20) return "󰁻"    // battery-20
+  if (lvl >= 10) return "󰁺"    // battery-10
+  return "󰂎"                   // battery-outline (empty)
+}
+
 // True when a device's address is present in the ignored set. `ignored` is a
 // plain object keyed by normalized address (see Panel.qml), so a lookup here
 // is a cheap hasOwnProperty rather than a scan.
@@ -141,7 +161,7 @@ function isIgnored(device, ignored) {
   return addr !== "" && Object.prototype.hasOwnProperty.call(ignored, addr)
 }
 
-function deviceLists(devices, ignored) {
+function deviceLists(devices, ignored, showAnonymous) {
   var values = toArray(devices)
   var connected = []
   var known = []
@@ -151,11 +171,13 @@ function deviceLists(devices, ignored) {
     var d = values[i]
     if (!d) continue
     // Keep anonymous devices (no human-readable name) in the discovered
-    // list, labeled by address, so they can be hidden from scans too.
+    // list, labeled by address, so they can be hidden from scans too. The
+    // panel's "show anonymous" toggle can drop them from the scan results,
+    // but connected and paired devices always stay visible.
     if (!hasHumanName(d) && displayLabel(d) === "") continue
     if (d.connected) connected.push(d)
     else if (d.paired || d.bonded || d.trusted) known.push(d)
-    else if (!isIgnored(d, ignored)) discovered.push(d)
+    else if (!isIgnored(d, ignored) && (showAnonymous || hasHumanName(d))) discovered.push(d)
   }
 
   return {
@@ -263,6 +285,7 @@ if (typeof module !== "undefined") {
     sortedByLabel: sortedByLabel,
     deviceRow: deviceRow,
     deviceIconGlyph: deviceIconGlyph,
+    batteryGlyph: batteryGlyph,
     deviceLists: deviceLists,
     cloneMap: cloneMap,
     pendingAction: pendingAction,

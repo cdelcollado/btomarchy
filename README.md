@@ -19,12 +19,17 @@ and paired devices are always shown.
   press `/`).
 - **Show MAC addresses** with the `MAC` toggle, to tell same-named neighbours
   apart.
+- **Show or hide anonymous devices** (MAC- or UUID-only advertisers) with the
+  `ANON` toggle — collapse the neighbour-noise wall in one click.
+- Connected devices that report a battery level show a **battery percentage**
+  next to their name (mice, headsets, keyboards, … where BlueZ exposes it).
 - **Right-click** any device for a context menu (Connect / Disconnect /
   Forget / Hide from scans).
 - Device rows show an **icon by device type** (headset, keyboard, mouse,
   phone, …) where BlueZ reports one.
-- Anonymous devices (MAC- or UUID-only advertisers) still appear in the
-  **AVAILABLE** list — labeled by address — so they can be hidden too.
+- Anonymous devices (MAC- or UUID-only advertisers) appear in the
+  **AVAILABLE** list — labeled by address — so they can be hidden individually
+  or in bulk with the `ANON` toggle.
 - Hidden devices are persisted in
   `~/.local/state/omarchy/bluetooth-ignored.json` and survive shell restarts
   and `omarchy update`.
@@ -72,6 +77,10 @@ Delete that file if you want to start fresh.
    tooltip "Hide") — or right-click the device and pick **Hide from scans**.
 4. To restore a device, open the **HIDDEN** section at the bottom and click
    the eye button (`󰈈`, tooltip "Show again").
+
+The `MAC` and `ANON` toggles under the filter box control whether raw addresses
+and nameless advertisers are shown, respectively. Battery percentage appears
+automatically on connected devices that report it — no configuration needed.
 
 Keyboard (once the panel is open): `j`/`k` move through the list, `Enter`
 connects/disconnects, `x` forgets, `b` toggles Bluetooth, `/` focuses the

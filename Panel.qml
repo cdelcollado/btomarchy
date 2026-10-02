@@ -173,14 +173,19 @@ Panel {
     onFileChanged: reload()
   }
 
-  // Live device-list filter (search box) and an address-display toggle. The
-  // filter is applied at the group level (filteredGroups) so every downstream
-  // consumer — rows, section visibility, and the keyboard cursor — sees the
-  // same filtered view and stays in sync.
+  // Live device-list filter (search box) and the address/anonymous toggles.
+  // The filter is applied at the group level (filteredGroups) so every
+  // downstream consumer — rows, section visibility, and the keyboard cursor —
+  // sees the same filtered view and stays in sync.
   property string searchQuery: ""
   property bool showAddresses: false
+  // True by default (matches the historical behaviour of listing every MAC- or
+  // UUID-only advertiser in the AVAILABLE section). Turning it off drops those
+  // anonymous devices from the scan results; connected and paired devices are
+  // never affected.
+  property bool showAnonymous: true
 
-  readonly property var deviceGroups: Model.deviceLists(devices, ignoredDevices)
+  readonly property var deviceGroups: Model.deviceLists(devices, ignoredDevices, showAnonymous)
   readonly property var filteredGroups: Model.filterLists(deviceGroups, searchQuery)
   readonly property var connectedDevices: filteredGroups.connected || []
   readonly property var knownDevices: filteredGroups.known || []
@@ -959,12 +964,12 @@ Panel {
           id: filterRow
           visible: root.adapter && root.adapter.enabled
           width: parent.width
-          implicitHeight: Math.max(filterField.implicitHeight, macToggle.implicitHeight)
+          implicitHeight: Math.max(filterField.implicitHeight, togglesRow.implicitHeight)
 
           TextField {
             id: filterField
             anchors.left: parent.left
-            anchors.right: macRow.left
+            anchors.right: togglesRow.left
             anchors.rightMargin: Style.space(10)
             anchors.verticalCenter: parent.verticalCenter
             placeholderText: "Filter devices…"
@@ -978,27 +983,59 @@ Panel {
           }
 
           Row {
-            id: macRow
+            id: togglesRow
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
-            spacing: Style.space(6)
+            spacing: Style.space(12)
 
-            Text {
-              textFormat: Text.PlainText
-              text: "MAC"
-              color: Qt.darker(root.bar.foreground, 1.4)
-              font.family: root.bar.fontFamily
-              font.pixelSize: Style.font.caption
-              font.bold: true
+            // "MAC" — show the raw address under the device name.
+            Row {
+              id: macRow
               anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(6)
+
+              Text {
+                textFormat: Text.PlainText
+                text: "MAC"
+                color: Qt.darker(root.bar.foreground, 1.4)
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+                anchors.verticalCenter: parent.verticalCenter
+              }
+
+              ToggleSwitch {
+                id: macToggle
+                checked: root.showAddresses
+                foreground: root.bar.foreground
+                accent: Color.accent
+                onToggled: root.showAddresses = !root.showAddresses
+              }
             }
 
-            ToggleSwitch {
-              id: macToggle
-              checked: root.showAddresses
-              foreground: root.bar.foreground
-              accent: Color.accent
-              onToggled: root.showAddresses = !root.showAddresses
+            // "ANON" — show or hide MAC-only (nameless) advertisers.
+            Row {
+              id: anonRow
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.space(6)
+
+              Text {
+                textFormat: Text.PlainText
+                text: "ANON"
+                color: Qt.darker(root.bar.foreground, 1.4)
+                font.family: root.bar.fontFamily
+                font.pixelSize: Style.font.caption
+                font.bold: true
+                anchors.verticalCenter: parent.verticalCenter
+              }
+
+              ToggleSwitch {
+                id: anonToggle
+                checked: root.showAnonymous
+                foreground: root.bar.foreground
+                accent: Color.accent
+                onToggled: root.showAnonymous = !root.showAnonymous
+              }
             }
           }
         }
@@ -1391,7 +1428,9 @@ Panel {
       if (action === "forgetting") return "Forgetting…"
       if (action === "disconnecting" || devState === 2) return "Disconnecting…"
       if (isConnected) {
-        if (dev.batteryAvailable) return Math.round(dev.battery * 100) + "%"
+        // Battery is shown as a dedicated indicator next to the name, so the
+        // status line stays empty for connected rows (the "current" highlight
+        // already conveys the connected state).
         return sectionName === "connected" ? "" : "Connected"
       }
       if (action === "connecting" || devState === 3 || dev.pairing === true) return "Connecting…"
@@ -1404,6 +1443,13 @@ Panel {
       if (action !== "" || devState === 3 || dev.pairing === true) return root.bar.foreground
       return Qt.darker(root.bar.foreground, 1.5)
     }
+
+    // Battery is only meaningful for the connected device, and only when BlueZ
+    // reports it. Shown as a dedicated glyph + percentage on the trailing edge.
+    readonly property bool showBattery: dev && dev.connected && dev.batteryAvailable
+    readonly property int batteryLevel: dev && dev.batteryAvailable ? Math.round(dev.battery * 100) : 0
+    readonly property string batteryGlyph: Model.batteryGlyph(row.batteryLevel)
+    readonly property color batteryColor: row.batteryLevel <= 15 ? Color.urgent : root.bar.foreground
 
     implicitHeight: rowContent.implicitHeight + Style.spacing.rowPaddingX
 
@@ -1447,7 +1493,7 @@ Panel {
       anchors.verticalCenter: parent.verticalCenter
       anchors.leftMargin: Style.space(10)
       anchors.rightMargin: Style.space(10)
-      implicitHeight: Math.max(deviceIcon.implicitHeight, info.implicitHeight, forgetBtn.implicitHeight, ignoreBtn.implicitHeight)
+      implicitHeight: Math.max(deviceIcon.implicitHeight, info.implicitHeight, forgetBtn.implicitHeight, ignoreBtn.implicitHeight, batteryIndicator.implicitHeight)
 
       Text {
         id: deviceIcon
@@ -1465,8 +1511,8 @@ Panel {
         spacing: Style.space(1)
         anchors.left: deviceIcon.right
         anchors.leftMargin: Style.space(10)
-        anchors.right: forgetBtn.visible ? forgetBtn.left : (ignoreBtn.visible ? ignoreBtn.left : parent.right)
-        anchors.rightMargin: (forgetBtn.visible || ignoreBtn.visible) ? Style.space(8) : 0
+        anchors.right: batteryIndicator.visible ? batteryIndicator.left : (forgetBtn.visible ? forgetBtn.left : (ignoreBtn.visible ? ignoreBtn.left : parent.right))
+        anchors.rightMargin: (batteryIndicator.visible || forgetBtn.visible || ignoreBtn.visible) ? Style.space(8) : 0
         anchors.verticalCenter: parent.verticalCenter
 
         Text {
@@ -1497,6 +1543,37 @@ Panel {
           font.pixelSize: Style.font.caption
           elide: Text.ElideRight
           width: parent.width
+        }
+      }
+
+      // Battery indicator, right-aligned ahead of the forget/ignore buttons.
+      // Only for the connected device when BlueZ reports a level.
+      Row {
+        id: batteryIndicator
+        visible: row.showBattery
+        anchors.right: forgetBtn.visible ? forgetBtn.left : (ignoreBtn.visible ? ignoreBtn.left : parent.right)
+        anchors.rightMargin: (forgetBtn.visible || ignoreBtn.visible) ? Style.space(8) : 0
+        anchors.verticalCenter: parent.verticalCenter
+        spacing: Style.space(4)
+
+        Text {
+          id: batteryIcon
+          textFormat: Text.PlainText
+          text: row.batteryGlyph
+          color: row.batteryColor
+          font.family: root.bar.fontFamily
+          font.pixelSize: Style.font.caption
+          anchors.verticalCenter: parent.verticalCenter
+        }
+
+        Text {
+          textFormat: Text.PlainText
+          text: row.batteryLevel + "%"
+          color: row.batteryColor
+          font.family: root.bar.fontFamily
+          font.pixelSize: Style.font.caption
+          font.bold: true
+          anchors.verticalCenter: parent.verticalCenter
         }
       }
 
