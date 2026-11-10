@@ -22,7 +22,7 @@ and paired devices are always shown.
 - **Show or hide anonymous devices** (MAC- or UUID-only advertisers) with the
   `ANON` toggle — collapse the neighbour-noise wall in one click.
 - Connected devices that report a battery level show a **battery percentage**
-  next to their name (mice, headsets, keyboards, … where BlueZ exposes it).
+  next to their name X
 - **Right-click** any device for a context menu (Connect / Disconnect /
   Forget / Hide from scans).
 - Device rows show an **icon by device type** (headset, keyboard, mouse,

@@ -90,21 +90,31 @@ function sortedByLabel(devices) {
   return list
 }
 
+// UPower reports a percentage; the panel wants a 0-1 fraction like BlueZ.
+// Scale 0-100 down, pass through values already <= 1.
+function upowerPercent(p) {
+  if (p === undefined || p === null || isNaN(p)) return 0
+  return p > 1 ? p / 100 : p
+}
+
 // Primitives-only projection of a BlueZ device for list-model rows. Holding
 // the Device QObject in model data puts a live wrapper into every delegate's
 // var property, and BlueZ churn (discovery timeouts, unpair) can destroy the
 // object while a delegate is still incubating, which segfaults quickshell.
 // Actions resolve the backend object via Panel.deviceFor().
-function deviceRow(d) {
+function deviceRow(d, upowerBatteries) {
   if (!d) return null
+  var addr = (d.address || "").toLowerCase()
+  var fallback = upowerBatteries ? upowerBatteries[addr] : undefined
+  var hasFallback = !d.batteryAvailable && fallback !== undefined
   return {
     address: d.address || "",
     name: d.name || "",
     deviceName: d.deviceName || "",
     connected: !!d.connected,
     state: d.state !== undefined ? d.state : -1,
-    batteryAvailable: !!d.batteryAvailable,
-    battery: d.battery !== undefined ? d.battery : 0,
+    batteryAvailable: !!d.batteryAvailable || hasFallback,
+    battery: d.batteryAvailable ? d.battery : (hasFallback ? fallback : 0),
     pairing: !!d.pairing,
     icon: d.icon || ""
   }

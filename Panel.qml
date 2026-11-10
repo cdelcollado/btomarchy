@@ -3,6 +3,7 @@ import QtQuick.Controls
 import Quickshell
 import Quickshell.Io
 import Quickshell.Bluetooth
+import Quickshell.Services.UPower
 import Quickshell.Services.Pipewire
 import qs.Ui
 import qs.Commons
@@ -29,6 +30,20 @@ Panel {
   // Discovering property also reflects sessions other clients hold, which are
   // never this panel's to stop.
   property bool owesDiscoveryStop: false
+  // Fallback battery source. Keyboards such as the Keychron K8 report their
+  // charge in HID reports, not through the BlueZ Battery Service, so BlueZ has
+  // no Battery1 for them. The kernel exposes it as a power supply and UPower
+  // names it "hid-<mac>-battery-N". Map lowercase MAC -> fraction (0-1).
+  readonly property var upowerBatteries: {
+    var map = {}
+    var list = UPower.devices ? UPower.devices.values : []
+    for (var i = 0; i < list.length; i++) {
+      var m = /^hid-([0-9a-f:]{17})-battery/i.exec(list[i].nativePath || "")
+      if (m) map[m[1].toLowerCase()] = Model.upowerPercent(list[i].percentage)
+    }
+    return map
+  }
+
   readonly property var devices: Bluetooth.devices ? Bluetooth.devices.values : []
   readonly property var pipewireNodes: Pipewire.nodes ? Pipewire.nodes.values : []
   property var pendingAudioOutputDevice: null
@@ -277,10 +292,10 @@ Panel {
   readonly property var scrollRows: {
     var rows = []
     for (var k = 0; k < knownDevices.length; k++)
-      rows.push({ dev: Model.deviceRow(knownDevices[k]), section: "known", indexInSection: k })
+      rows.push({ dev: Model.deviceRow(knownDevices[k], upowerBatteries), section: "known", indexInSection: k })
     if (sectionVisible("discovered"))
       for (var d = 0; d < discoveredDevices.length; d++)
-        rows.push({ dev: Model.deviceRow(discoveredDevices[d]), section: "discovered", indexInSection: d })
+        rows.push({ dev: Model.deviceRow(discoveredDevices[d], upowerBatteries), section: "discovered", indexInSection: d })
     return rows
   }
 
@@ -289,7 +304,7 @@ Panel {
   readonly property var connectedRows: {
     var rows = []
     for (var i = 0; i < connectedDevices.length; i++)
-      rows.push(Model.deviceRow(connectedDevices[i]))
+      rows.push(Model.deviceRow(connectedDevices[i], upowerBatteries))
     return rows
   }
 
